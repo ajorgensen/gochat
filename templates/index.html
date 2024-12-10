@@ -1,0 +1,16 @@
+<html>
+<head>
+    <title>Title</title>
+
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+</head>
+<body>
+
+    <h1>SSE Example with HTMX</h1>
+    <div hx-ext="sse" sse-connect="/messages" sse-swap="message">
+        Contents of this box will be updated in real time with every SSE message received from the chatroom.
+    </div>
+
+</body>
+</html>
