@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -24,41 +23,50 @@ func main() {
 	r.Handle("/public/*", http.StripPrefix("/public/", http.FileServerFS(static.AssetsFS)))
 
 	tmpl := template.Must(template.ParseGlob("templates/*.html"))
-
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		tmpl.ExecuteTemplate(w, "index.html", nil)
 	})
 
-	r.Get("/messages", sseHandler)
+	r.Post("/messages", messagesHandler)
 
 	log.Printf("Listening on port 3333")
 	http.ListenAndServe(":3333", r)
 }
 
-func sseHandler(w http.ResponseWriter, r *http.Request) {
+func messagesHandler(w http.ResponseWriter, r *http.Request) {
 	// Set headers for SSE
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	// Create a channel to send data
-	dataCh := make(chan string)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
 
-	// Create a context for handling client disconnection
-	_, cancel := context.WithCancel(r.Context())
-	defer cancel()
+	ctx := r.Context()
+	r.ParseForm()
+	userMessage := r.FormValue("message")
 
-	// Send data to the client
-	go func() {
-		for data := range dataCh {
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			w.(http.Flusher).Flush()
-		}
-	}()
+	// Immediately send a welcome message
+	fmt.Fprintf(w, "data: Received your message: %s\n\n", userMessage)
+	flusher.Flush()
 
-	// Simulate sending data periodically
+	// Continuously send data every second until client disconnects
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	count := 0
 	for {
-		dataCh <- time.Now().Format(time.TimeOnly)
-		time.Sleep(1 * time.Second)
+		select {
+		case <-ctx.Done():
+			// Client disconnected
+			return
+		case t := <-ticker.C:
+			count++
+			fmt.Fprintf(w, "data: %s - Count: %d\n\n", t.Format(time.RFC3339), count)
+			flusher.Flush()
+		}
 	}
 }
