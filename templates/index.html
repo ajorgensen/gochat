@@ -4,12 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/> 
     <title>Streaming POST Demo</title>
+    <link rel="stylesheet" href="/public/assets/styles.css">
 </head>
 <body>
-    <form id="chat-form">
-        <input type="text" name="message" placeholder="Type a message..." />
-        <button type="submit">Send</button>
-    </form>
+    <div class="chat-input-container">
+        <form id="chat-form">
+            <textarea 
+                name="message"
+                class="chat-input" 
+                placeholder="Type a message..."
+                rows="1"
+                ></textarea>
+            <button class="submit-button">↑</button>
+        </form>
+    </div>
 
     <div id="messages">
         {{range .Messages}}
@@ -23,6 +31,9 @@
             const form = e.target;
             const formData = new FormData(form);
             const userMessage = formData.get('message');
+
+            // Clear out the text area
+            form.reset();
 
             // Make a POST request and keep the connection open to read streamed data
             const resp = await fetch('/messages', {
@@ -40,8 +51,15 @@
             let buffer = '';
 
             const div = document.getElementById('messages');
+            // Append the users message to the page
             p = document.createElement('p');
             div.appendChild(p);
+            p.textContent = "User: " + userMessage;
+
+            // Append the robots message to the page
+            p = document.createElement('p');
+            div.appendChild(p);
+
 
             while (true) {
                 const {value, done} = await reader.read();
@@ -66,7 +84,7 @@
                         }
 
                         // Update the message content
-                        p.textContent = json.message;
+                        p.textContent = "Robot: " + json.message;
                     }
                 }
 

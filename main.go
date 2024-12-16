@@ -88,7 +88,7 @@ func messagesHandler(w http.ResponseWriter, r *http.Request) {
 		conversations[conversation.ConversationID] = conversation
 	}
 
-	stream := stream.New("Hello, I am just a robot")
+	stream := stream.New(fmt.Sprintf("Hello, I am just a robot. Here is what you just said to me: %s", userMessage))
 	words := stream.StreamWords()
 
 	// Append the users message
