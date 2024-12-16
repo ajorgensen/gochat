@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"text/template"
-	"time"
 
 	"github.com/ajorgensen/gochat/static"
 	"github.com/ajorgensen/gochat/stream"
@@ -63,10 +62,6 @@ func messagesHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	userMessage := r.FormValue("message")
 	fmt.Println(userMessage)
-
-	// Continuously send data every second until client disconnects
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
 
 	if conversation == nil {
 		conversation = &Conversation{
