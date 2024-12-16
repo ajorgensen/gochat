@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -8,9 +9,22 @@ import (
 	"time"
 
 	"github.com/ajorgensen/gochat/static"
+	"github.com/ajorgensen/gochat/stream"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/gofrs/uuid"
 )
+
+type Conversation struct {
+	ConversationID string `json:"conversation_id"`
+}
+
+type Message struct {
+	ConversationID string `json:"conversation_id"`
+	Message        string `json:"message"`
+}
+
+var conversation *Conversation
 
 func main() {
 	r := chi.NewRouter()
@@ -45,28 +59,37 @@ func messagesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	//ctx := r.Context()
 	r.ParseForm()
 	userMessage := r.FormValue("message")
-
-	// Immediately send a welcome message
-	fmt.Fprintf(w, "data: Received your message: %s\n\n", userMessage)
-	flusher.Flush()
+	fmt.Println(userMessage)
 
 	// Continuously send data every second until client disconnects
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	count := 0
-	for {
-		select {
-		case <-ctx.Done():
-			// Client disconnected
-			return
-		case t := <-ticker.C:
-			count++
-			fmt.Fprintf(w, "data: %s - Count: %d\n\n", t.Format(time.RFC3339), count)
-			flusher.Flush()
+	if conversation == nil {
+		conversation = &Conversation{
+			ConversationID: uuid.Must(uuid.NewV4()).String(),
 		}
+	}
+
+	stream := stream.New("Hello, I am just a robot")
+	words := stream.StreamWords()
+
+	for word := range words {
+		payload := &Message{
+			ConversationID: conversation.ConversationID,
+			Message:        word,
+		}
+
+		jsonPayload, err := json.Marshal(payload)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		fmt.Fprintf(w, "data: %s\n\n", jsonPayload)
+		flusher.Flush()
 	}
 }
