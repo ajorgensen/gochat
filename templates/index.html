@@ -11,7 +11,11 @@
         <button type="submit">Send</button>
     </form>
 
-    <div id="messages"></div>
+    <div id="messages">
+        {{range .Messages}}
+            <p>{{.Message}}</p>
+        {{end}}
+    </div>
 
     <script>
         document.getElementById('chat-form').addEventListener('submit', async (e) => {
@@ -19,9 +23,6 @@
             const form = e.target;
             const formData = new FormData(form);
             const userMessage = formData.get('message');
-
-            // Clear out old messages
-            //document.getElementById('messages').innerHTML = "";
 
             // Make a POST request and keep the connection open to read streamed data
             const resp = await fetch('/messages', {
@@ -38,18 +39,20 @@
             const decoder = new TextDecoder("utf-8");
             let buffer = '';
 
+            const div = document.getElementById('messages');
+            p = document.createElement('p');
+            div.appendChild(p);
+
             while (true) {
                 const {value, done} = await reader.read();
                 if (done) break;
 
                 buffer += decoder.decode(value, {stream: true});
 
-                // Split on newlines to process SSE lines
                 const lines = buffer.split("\n");
-                // Process all complete lines except possibly the last one
                 for (let i = 0; i < lines.length - 1; i++) {
                     const line = lines[i].trim();
-                    // SSE lines start with 'data: '
+
                     if (line.startsWith("data: ")) {
                         const msg = line.substring(6);
 
@@ -62,13 +65,11 @@
                             window.history.pushState({}, '', newPath);
                         }
 
-                        const div = document.getElementById('messages');
-                        // Append the message to the page
-                        const p = document.createElement('p');
-                        p.textContent = msg;
-                        div.appendChild(p);
+                        // Update the message content
+                        p.textContent = json.message;
                     }
                 }
+
                 // Keep only the last partial line if incomplete
                 buffer = lines[lines.length - 1];
             }

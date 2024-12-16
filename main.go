@@ -15,7 +15,8 @@ import (
 )
 
 type Conversation struct {
-	ConversationID string `json:"conversation_id"`
+	ConversationID string    `json:"conversation_id"`
+	Messages       []Message `json:"messages"`
 }
 
 type Message struct {
@@ -23,7 +24,7 @@ type Message struct {
 	Message        string `json:"message"`
 }
 
-var conversation *Conversation
+var conversations = make(map[string]*Conversation)
 
 func main() {
 	r := chi.NewRouter()
@@ -37,7 +38,18 @@ func main() {
 
 	tmpl := template.Must(template.ParseGlob("templates/*.html"))
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		tmpl.ExecuteTemplate(w, "index.html", nil)
+		tmpl.ExecuteTemplate(w, "index.html", Conversation{})
+	})
+	r.Get("/c/{cID}", func(w http.ResponseWriter, r *http.Request) {
+		cID := chi.URLParam(r, "cID")
+
+		conversation := conversations[cID]
+		if conversation == nil {
+			http.Error(w, "Conversation not found", http.StatusInternalServerError)
+			return
+		}
+
+		tmpl.ExecuteTemplate(w, "index.html", conversation)
 	})
 
 	r.Post("/messages", messagesHandler)
@@ -61,16 +73,33 @@ func messagesHandler(w http.ResponseWriter, r *http.Request) {
 	//ctx := r.Context()
 	r.ParseForm()
 	userMessage := r.FormValue("message")
+	converationID := r.FormValue("conversation_id")
 	fmt.Println(userMessage)
 
-	if conversation == nil {
+	var conversation *Conversation
+	if converationID != "" {
+		conversation = conversations[converationID]
+	} else {
 		conversation = &Conversation{
 			ConversationID: uuid.Must(uuid.NewV4()).String(),
+			Messages:       []Message{},
 		}
+
+		conversations[conversation.ConversationID] = conversation
 	}
 
 	stream := stream.New("Hello, I am just a robot")
 	words := stream.StreamWords()
+
+	// Append the users message
+	conversation.Messages = append(conversation.Messages, Message{
+		Message: userMessage,
+	})
+
+	// Append the robots message to the conversation
+	conversation.Messages = append(conversation.Messages, Message{
+		Message: stream.Message,
+	})
 
 	for word := range words {
 		payload := &Message{
