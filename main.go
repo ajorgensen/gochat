@@ -5,28 +5,35 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"text/template"
+	"os"
 
+	"github.com/ajorgensen/gochat/db"
 	"github.com/ajorgensen/gochat/static"
 	"github.com/ajorgensen/gochat/stream"
+	"github.com/ajorgensen/gochat/templates"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/gofrs/uuid"
+	"github.com/joho/godotenv"
 )
 
-type Conversation struct {
-	ConversationID string    `json:"conversation_id"`
-	Messages       []Message `json:"messages"`
-}
-
-type Message struct {
-	ConversationID string `json:"conversation_id"`
-	Message        string `json:"message"`
-}
-
-var conversations = make(map[string]*Conversation)
-
 func main() {
+	godotenv.Load()
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL environment variable not set")
+	}
+
+	dbc, err := db.Connect(dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dbc.Close()
+
+	if _, err := dbc.CreateConversation("foobar"); err != nil {
+		log.Fatal(err)
+	}
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -36,84 +43,107 @@ func main() {
 
 	r.Handle("/public/*", http.StripPrefix("/public/", http.FileServerFS(static.AssetsFS)))
 
-	tmpl := template.Must(template.ParseGlob("templates/*.html"))
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		tmpl.ExecuteTemplate(w, "index.html", Conversation{})
-	})
-	r.Get("/c/{cID}", func(w http.ResponseWriter, r *http.Request) {
-		cID := chi.URLParam(r, "cID")
+		c, err := dbc.SelectConversations()
 
-		conversation := conversations[cID]
-		if conversation == nil {
-			http.Error(w, "Conversation not found", http.StatusInternalServerError)
+		if err != nil {
+			log.Printf("err: %v", err)
+			http.Error(w, "Error fetching conversations", http.StatusInternalServerError)
 			return
 		}
 
-		tmpl.ExecuteTemplate(w, "index.html", conversation)
+		if err := templates.Index(w, templates.IndexParams{Conversations: c}); err != nil {
+			log.Printf("err: %v", err)
+		}
 	})
 
-	r.Post("/messages", messagesHandler)
+	r.Get("/c/{cID}", func(w http.ResponseWriter, r *http.Request) {
+		cID := chi.URLParam(r, "cID")
+
+		// Check to see if there is a conversation for this id
+		conversation, err := dbc.FindConversation(cID)
+		if err != nil {
+			http.Error(w, "error fetching conversation", http.StatusInternalServerError)
+			return
+		}
+
+		if conversation == nil {
+			http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		}
+
+		messages, err := dbc.GetMessages(conversation.ConversationID)
+		if err != nil {
+			http.Error(w, "error fetching messages", http.StatusInternalServerError)
+			return
+		}
+
+		if err := templates.Chat(w, templates.ChatParams{
+			Conversation: conversation,
+			Messages:     messages,
+		}); err != nil {
+			log.Printf("err: %v", err)
+		}
+	})
+
+	r.Post("/messages", messagesHandler(dbc))
 
 	log.Printf("Listening on port 3333")
 	http.ListenAndServe(":3333", r)
 }
 
-func messagesHandler(w http.ResponseWriter, r *http.Request) {
-	// Set headers for SSE
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+func messagesHandler(dbc *db.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Set headers for SSE
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-
-	//ctx := r.Context()
-	r.ParseForm()
-	userMessage := r.FormValue("message")
-	converationID := r.FormValue("conversation_id")
-	fmt.Println(userMessage)
-
-	var conversation *Conversation
-	if converationID != "" {
-		conversation = conversations[converationID]
-	} else {
-		conversation = &Conversation{
-			ConversationID: uuid.Must(uuid.NewV4()).String(),
-			Messages:       []Message{},
-		}
-
-		conversations[conversation.ConversationID] = conversation
-	}
-
-	stream := stream.New(fmt.Sprintf("Hello, I am just a robot. Here is what you just said to me: %s", userMessage))
-	words := stream.StreamWords()
-
-	// Append the users message
-	conversation.Messages = append(conversation.Messages, Message{
-		Message: userMessage,
-	})
-
-	// Append the robots message to the conversation
-	conversation.Messages = append(conversation.Messages, Message{
-		Message: stream.Message,
-	})
-
-	for word := range words {
-		payload := &Message{
-			ConversationID: conversation.ConversationID,
-			Message:        word,
-		}
-
-		jsonPayload, err := json.Marshal(payload)
-		if err != nil {
-			log.Println(err)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 			return
 		}
 
-		fmt.Fprintf(w, "data: %s\n\n", jsonPayload)
-		flusher.Flush()
+		//ctx := r.Context()
+		r.ParseForm()
+		userMessage := r.FormValue("message")
+		converationID := r.FormValue("conversationId")
+
+		fmt.Printf("conversation id: %s\n", converationID)
+
+		robotMessage := fmt.Sprintf("Hello, I am just a robot. Here is what you just said to me: %s", userMessage)
+
+		stream := stream.New(robotMessage)
+		words := stream.StreamWords()
+
+		// Write the user message to the database
+		err := dbc.CreateMessage(converationID, db.User, userMessage)
+		if err != nil {
+			http.Error(w, "error saving message", http.StatusInternalServerError)
+			return
+		}
+
+		// Write robot message to the database
+		err = dbc.CreateMessage(converationID, db.Assistant, robotMessage)
+		if err != nil {
+			http.Error(w, "error saving message", http.StatusInternalServerError)
+			return
+		}
+
+		for word := range words {
+			payload := &db.Message{
+				ConversationID: converationID,
+				Message:        word,
+			}
+
+			jsonPayload, err := json.Marshal(payload)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
+			fmt.Fprintf(w, "data: %s\n\n", jsonPayload)
+			flusher.Flush()
+		}
 	}
 }

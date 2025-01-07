@@ -1,0 +1,18 @@
+{
+  "*.go": {
+    "alternate": "{}_test.go",
+    "type": "source"
+  },
+  "*_test.go": {
+    "alternate": "{}.go",
+    "type": "test"
+  },
+  "*.templ": {
+    "alternate": "{}_templ.go",
+    "type": "source"
+  },
+  "*_templ.go": {
+    "alternate": "{}.templ",
+    "type": "source"
+  }
+}

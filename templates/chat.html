@@ -1,0 +1,95 @@
+{{ define "title" }}
+GoChat - {{ .Conversation.Title }}
+{{ end }}
+
+{{ define "content" }}
+<div id="messages">
+    {{range .Messages}}
+    <p>{{.Role}}: {{.Message}}</p>
+    {{end}}
+</div>
+
+<div class="chat-input-container">
+    <form id="chat-form">
+        <input type="hidden" name="conversation_id" value="{{ .Conversation.ConversationID }}">
+        <textarea 
+            name="message"
+            class="chat-input" 
+            placeholder="Type a message..."
+            rows="1"
+            ></textarea>
+        <button class="submit-button">↑</button>
+    </form>
+</div>
+
+
+<script>
+    document.getElementById('chat-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        const userMessage = formData.get('message');
+        const conversationId = formData.get('conversation_id');
+
+        // Clear out the text area
+        form.reset();
+
+        // Make a POST request and keep the connection open to read streamed data
+        const resp = await fetch('/messages', {
+            method: 'POST',
+            body: new URLSearchParams({message: userMessage, conversationId: conversationId})
+        });
+
+        if (!resp.ok) {
+            document.getElementById('messages').innerHTML = "<p>Error: " + resp.statusText + "</p>";
+            return;
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = '';
+
+        const div = document.getElementById('messages');
+        // Append the users message to the page
+        p = document.createElement('p');
+        div.appendChild(p);
+        p.textContent = "User: " + userMessage;
+
+        // Append the robots message to the page
+        p = document.createElement('p');
+        div.appendChild(p);
+
+
+        while (true) {
+            const {value, done} = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, {stream: true});
+
+            const lines = buffer.split("\n");
+            for (let i = 0; i < lines.length - 1; i++) {
+                const line = lines[i].trim();
+
+                if (line.startsWith("data: ")) {
+                    const msg = line.substring(6);
+
+                    // Parse the message as json
+                    const json = JSON.parse(msg);
+
+                    // Update URL if we have a conversation_id and we're still on /c/new
+                        if (json.conversation_id && !window.location.pathname.endsWith(json.conversation_id)) {
+                            const newPath = `/c/${json.conversation_id}`;
+                            window.history.pushState({}, '', newPath);
+                        }
+
+                    // Update the message content
+                    p.textContent = "Robot: " + json.message;
+                }
+            }
+
+            // Keep only the last partial line if incomplete
+            buffer = lines[lines.length - 1];
+        }
+    });
+</script>
+{{ end }}
