@@ -80,18 +80,23 @@ func main() {
 		if err := templates.Chat(w, templates.ChatParams{
 			Conversation: conversation,
 			Messages:     messages,
+			Providers:    templates.Providers,
 		}); err != nil {
 			log.Printf("err: %v", err)
 		}
 	})
 
-	r.Post("/messages", messagesHandler(dbc))
+	r.Post("/ask", askHandler(dbc))
 
 	log.Printf("Listening on port 3333")
 	http.ListenAndServe(":3333", r)
 }
 
-func messagesHandler(dbc *db.DB) func(w http.ResponseWriter, r *http.Request) {
+type AskResponse struct {
+	Message db.Message
+}
+
+func askHandler(dbc *db.DB) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Set headers for SSE
 		w.Header().Set("Content-Type", "text/event-stream")

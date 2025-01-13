@@ -3,6 +3,19 @@ GoChat - {{ .Conversation.Title }}
 {{ end }}
 
 {{ define "content" }}
+
+<div>
+    {{ range .Providers }}
+        {{ .Name }}
+        <ul>
+        {{ range .Models }}
+            <li>{{ .Name }}</li>
+        {{ end }}
+        </ul>
+    {{ end }}
+</div>
+
+
 <div id="messages">
     {{range .Messages}}
     <p>{{.Role}}: {{.Message}}</p>
@@ -12,6 +25,7 @@ GoChat - {{ .Conversation.Title }}
 <div class="chat-input-container">
     <form id="chat-form">
         <input type="hidden" name="conversation_id" value="{{ .Conversation.ConversationID }}">
+
         <textarea 
             name="message"
             class="chat-input" 
@@ -21,6 +35,10 @@ GoChat - {{ .Conversation.Title }}
         <button class="submit-button">↑</button>
     </form>
 </div>
+
+<script>
+const data = {{.Providers}};
+</script>
 
 
 <script>
@@ -35,7 +53,7 @@ GoChat - {{ .Conversation.Title }}
         form.reset();
 
         // Make a POST request and keep the connection open to read streamed data
-        const resp = await fetch('/messages', {
+        const resp = await fetch('/ask', {
             method: 'POST',
             body: new URLSearchParams({message: userMessage, conversationId: conversationId})
         });
